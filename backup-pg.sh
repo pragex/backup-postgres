@@ -3,6 +3,7 @@
 date=$(date "+%Y-%m-%d")
 bf="${0##*/}"
 log="log.txt"
+incremental=false
 
 if [[ "$1" = "--help" || "$1" = "--version" || "$1" = "-h" ]]; then
     echo "${bf}: backup PostgreSQL"
@@ -39,6 +40,14 @@ fi
 
 user_db="$4"
 
+if [ "${incremental}" == true ]; then
+    opt="-b"
+    ext="sql"
+else
+    opt="-Fc"
+    ext="dump"
+fi
+
 
 if [ ! -d "${dest}" ]; then
     mkdir "${dest}"
@@ -65,10 +74,26 @@ psql -U "${user}" -h "${host}" "${user_db}" -tc "SELECT datname FROM pg_database
 	if [ -n "${line}" ]; then
 	    db=$(trim "${line}")
 
-	    pg_dump  -U "${user}" -h "${host}" "${db}" -Fc > "${dest}${db}_${date}.dump" 2>> "${dest}${log}"
-	    
+	    pg_dump  "${opt}" -U "${user}" -h "${host}" "${db}" > "${dest}${db}_${date}.${ext}" 2>> "${dest}${log}"
+
 	    if [ $? -eq 0 ]; then
 		msg="Dump: '${db}'... ok"
+
+		if [ "${incremental}" == true ]; then
+		    
+		    if [ -f "${dest}${db}.${ext}" ]; then
+		      cmp -s "${dest}${db}.${ext}" "${dest}${db}_${date}.${ext}"
+
+		      if [ $? -eq 0 ]; then #no change
+			  rm "${dest}${db}_${date}.${ext}"
+			  msg="Dump: '${db}'... no change"
+		      fi
+		    fi
+
+		    if [ -f "${dest}${db}_${date}.${ext}" ]; then
+		      mv "${dest}${db}_${date}.${ext}" "${dest}${db}.${ext}"
+		    fi
+		fi
 	    else
 		msg="Dump: '${db}'... fail"
 	    fi
